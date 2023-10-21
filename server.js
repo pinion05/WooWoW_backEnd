@@ -70,17 +70,27 @@ app.get("/search", async (req, res) => {
           },
         }
       );
+      if (res.status === 404) {
+        res.status(500).json(error);
+        return;
+      }
       console.log(`${charactername} 호출완료`);
       cache.put(charactername, response.data, 5 * 60 * 1000);
+      res.status(200).json(response.data);
+      return;
     } catch (error) {
       console.log(`${charactername} 호출실패`);
       res.status(500).json(error);
-      // console.log(error);
+      return;
     }
   } else {
     console.log(`${charactername}캐시존재`);
+    res.status(200).json(cacheInfo);
+
+    return;
   }
   res.status(200).json(cacheInfo);
+  return;
 });
 
 app.get("/guild", async (req, res) => {
