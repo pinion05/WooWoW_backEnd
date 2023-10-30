@@ -7,6 +7,14 @@ const clientSecret = process.env.CLIENT_SECRET;
 const axios = require("axios");
 const qs = require("querystring");
 const cache = require("memory-cache");
+const Redis = require("ioredis");
+const redis = new Redis({
+  port: process.env.REDIS_PORT, // Redis port
+  host: process.env.REDIS_HOST, // Redis host
+  username: process.env.REDIS_USERNAME, // needs Redis >= 6
+  password: process.env.REDIS_PASSWORD,
+  db: 0, // Defaults to 0
+});
 
 app.use(express.json());
 app.use(
@@ -51,171 +59,160 @@ getAccessToken().then(() => {
   console.log(`✨token = ${accessToken}`);
 });
 
-app.get("/search", async (req, res) => {
-  await getAccessToken();
-  const accessToken = cache.get("token");
+app.get(`/api/character`, async (req, res) => {
   const charactername = req.query.charactername;
-  const cacheInfo = cache.get(charactername);
-  const encodedCharacterName = encodeURIComponent(charactername);
-  if (!cacheInfo) {
-    console.log(`${charactername} 캐시없음`);
-    try {
-      const response = await axios.get(
-        `https://kr.api.blizzard.com/profile/wow/character/makgora/${encodedCharacterName}`,
-        {
-          params: {
-            namespace: "profile-classic1x-kr",
-            locale: "ko_kr",
-            access_token: accessToken,
-          },
-        }
-      );
-      if (res.status === 404) {
-        res.status(500).json(error);
-        return;
-      }
-      console.log(`${charactername} 호출완료`);
-      cache.put(charactername, response.data, 5 * 60 * 1000);
-      res.status(200).json(response.data);
-      return;
-    } catch (error) {
-      console.log(`${charactername} 호출실패`);
-      res.status(500).json(error);
-      return;
-    }
-  } else {
-    console.log(`${charactername}캐시존재`);
-    res.status(200).json(cacheInfo);
-
-    return;
-  }
-  res.status(200).json(cacheInfo);
-  return;
-});
-
-app.get("/guild", async (req, res) => {
-  try {
-    await getAccessToken();
-  } catch (err) {
-    console.log("길드조회중토큰조회실패");
-    res.status(500).send(err);
-  }
-  const accessToken = cache.get("token");
-  const cachedGuildMemberCount = cache.get("guildMemberCount");
-  if (!cachedGuildMemberCount) {
-    console.log(`길드인원 캐시없음`);
-    try {
-      const response = await axios.get(
-        `https://kr.api.blizzard.com/data/wow/guild/makgora/%EC%99%81%ED%83%80%EB%B2%84%EC%8A%A4`,
-        {
-          params: {
-            namespace: "profile-classic1x-kr",
-            locale: "ko_kr",
-            access_token: accessToken,
-          },
-        }
-      );
-      const memberCount = response.data.member_count;
-      cache.put("guildMemberCount", memberCount, 1 * 60 * 1000);
-    } catch (error) {
-      console.log("길드 조회실패");
-      return res.status(500).json(error);
-    }
-  }
-  console.log(`길드인원정보 캐시존재`);
-  res.status(200).json(cachedGuildMemberCount);
-});
-
-app.get("/equipment", async (req, res) => {
-  await getAccessToken();
-  const accessToken = cache.get("token");
-  const charactername = req.query.charactername;
-  const encodedCharacterName = encodeURIComponent(charactername);
-  console.log(`${charactername} equipment요청됨`);
-  if (!cache.get(`equipment_${charactername}`)) {
-    console.log(`${charactername} 장비데이터 캐시없음`);
-    try {
-      const response = await axios.get(
-        `https://kr.api.blizzard.com/profile/wow/character/makgora/${encodedCharacterName}/equipment`,
-        {
-          params: {
-            namespace: "profile-classic1x-kr",
-            locale: "ko_kr",
-            access_token: accessToken,
-          },
-        }
-      );
-      console.log(`${charactername}장비 요청성공`);
-      cache.put(`equipment_${charactername}`, response.data, 5 * 60 * 1000);
-    } catch (error) {
-      console.log(error);
-      res.status(500).json(error);
-    }
-  } else console.log(`${charactername} 장비아이템 캐시존재`);
-  res.status(200).json(cache.get(`equipment_${charactername}`));
-});
-
-//
-
-app.get("/media", async (req, res) => {
-  const mediaid = req.query.mediaid;
-  if (!mediaid) {
-    res.status(400).send("mediaid 없음");
+  const redisCache = JSON.parse(
+    await redis.get(`character_card_${charactername}`)
+  );
+  if (redisCache) {
+    res.status(200).json(redisCache);
     return;
   }
   await getAccessToken();
   const accessToken = cache.get("token");
-  const imgCache = cache.get(`mediaid_${mediaid}`);
-  if (!imgCache) {
-    console.log(`mediaid_${mediaid} 캐시없음`);
-    let imgUrl;
-    console.log(`mediaid = ${mediaid} 요청됨`);
-    try {
-      const response = await axios.get(
-        `https://kr.api.blizzard.com/data/wow/media/item/${mediaid}`,
-        {
-          params: {
-            namespace: "static-1.14.4_50753-classic1x-kr",
-            access_token: accessToken,
-          },
-        }
-      );
-      imgUrl = response.data.assets[0].value;
-      console.log(imgUrl);
-    } catch (error) {
-      console.log(error);
-      res.status(500).json(error);
-      return;
-    }
-    cache.put(`mediaid_${mediaid}`, imgUrl, 24 * 60 * 60 * 1000);
-    console.log(`${mediaid} 캐시생성됨`);
+  const encodedName = encodeURIComponent(charactername);
+  if (!accessToken) {
+    console.log(`accessToken 을 찾을 수 없습니다.`);
   }
-  res.status(200).send(imgCache);
-});
 
-app.get("/statistics", async (req, res) => {
-  await getAccessToken();
-  const accessToken = cache.get("token");
-  const charactername = req.query.charactername;
-  console.log(`${charactername}/stasistics`);
+  console.log(`❌ Redis ${charactername} 캐릭터 캐시없음`);
   try {
-    const response = await axios.get(
-      `https://kr.api.blizzard.com/profile/wow/character/makgora/${encodeURIComponent(
-        charactername
-      )}/statistics`,
-      {
-        params: {
-          access_token: accessToken,
-          locale: "ko_KR",
-          namespace: "profile-classic1x-kr",
-        },
-      }
+    const characterResponse = await axios.get(
+      `https://kr.api.blizzard.com/profile/wow/character/makgora/${encodedName}?namespace=profile-classic1x-kr&locale=ko_KR&access_token=${accessToken}`
     );
-    res.status(200).json(response.data);
+    const characterResponseData = characterResponse.data;
+
+    await redis.set(
+      `character_card_${charactername}`,
+      JSON.stringify(characterResponseData),
+      "EX",
+      60 * 1
+    );
+    res.status(200).json(characterResponseData);
+    return;
   } catch (error) {
+    console.log("에러발생");
     console.log(error);
     res.status(500).send(error);
   }
+});
+
+app.get(`/api/characterinfo`, async (req, res) => {
+  const charactername = req.query.charactername;
+  const redisCache = JSON.parse(
+    await redis.get(`character_info_${charactername}`)
+  );
+  if (redisCache) {
+    res.status(200).json(redisCache);
+    return;
+  }
+  await getAccessToken();
+  const accessToken = cache.get("token");
+  const encodedName = encodeURIComponent(charactername);
+  if (!accessToken) {
+    console.log(`accessToken 을 찾을 수 없습니다.`);
+  }
+  console.log(`❌ Redis ${charactername} 캐릭터정보 캐시없음`);
+  try {
+    const characterResponse = await axios.get(
+      `https://kr.api.blizzard.com/profile/wow/character/makgora/${encodedName}?namespace=profile-classic1x-kr&locale=ko_KR&access_token=${accessToken}`
+    );
+    const equimentResponse = await axios.get(
+      `https://kr.api.blizzard.com/profile/wow/character/makgora/${encodedName}/equipment?namespace=profile-classic1x-kr&access_token=${accessToken}&locale=ko_KR`
+    );
+    const stasticsResponse = await axios.get(
+      `https://kr.api.blizzard.com/profile/wow/character/makgora/${encodedName}/statistics?namespace=profile-classic1x-kr&access_token=${accessToken}&locale=ko_KR`
+    );
+    const equimentResponseData = equimentResponse.data;
+    const characterResponseData = characterResponse.data;
+    const equimentItems = equimentResponseData.equipped_items;
+    const stasticsResponseData = stasticsResponse.data;
+    const equimentItemsAddURL = equimentItems.map(async (item, idx) => {
+      const response = await axios.get(
+        `https://kr.api.blizzard.com/data/wow/media/item/${item.media.id}?namespace=static-1.14.4_50753-classic1x-kr&access_token=KR8yFplomaTeggvFh9IELHFBMMPGWHR6UV`
+      );
+      const imgURL = response.data.assets[0].value;
+      item.media.url = imgURL;
+      return item;
+    });
+    const resolveEquimentItemsAddURL = await Promise.all(equimentItemsAddURL);
+    characterResponseData.equipment.items = resolveEquimentItemsAddURL;
+    characterResponseData.statistics.data = stasticsResponseData;
+    await redis.set(
+      `character_info_${charactername}`,
+      JSON.stringify(characterResponseData),
+      "EX",
+      60 * 4
+    );
+    res.status(200).json(characterResponseData);
+    return;
+  } catch (error) {
+    console.log("에러발생");
+    console.log(error);
+    res.status(500).send(error);
+  }
+});
+
+app.get("/api/guild", async (req, res) => {
+  const redisCache = await redis.get(`guild_count`);
+  if (redisCache) {
+    res.status(200).json(redisCache);
+    return;
+  }
+  await getAccessToken();
+  const accessToken = cache.get("token");
+  if (!accessToken) {
+    console.log(`accessToken 을 찾을 수 없습니다.`);
+    res.status(500).send("accessToken is denine");
+    return;
+  }
+  console.log(`❌ Redis 길드인원 캐시없음`);
+  try {
+    const response = await axios.get(
+      `https://kr.api.blizzard.com/data/wow/guild/makgora/%EC%99%81%ED%83%80%EB%B2%84%EC%8A%A4`,
+      {
+        params: {
+          namespace: "profile-classic1x-kr",
+          locale: "ko_kr",
+          access_token: accessToken,
+        },
+      }
+    );
+    if (response.status === 404) {
+      res.status(500).json("error");
+      return;
+    }
+    await redis.set(`guild_count`, response.data.member_count, "EX", 30);
+    res.status(200).json(response.data.member_count);
+    return;
+  } catch (error) {
+    console.log(`길드인원 호출실패`);
+    res.status(500).json(error);
+    return;
+  }
+});
+//
+
+app.post("/api/worldbuff", async (req, res) => {
+  console.log("월법 개시시도");
+  const { adminKey, buffData } = req.body;
+  const redisAdminkey = await redis.get("adminKey");
+  if (adminKey === redisAdminkey) {
+    console.log(`키 일치`);
+    console.log(adminKey, buffData);
+    redis.set("Redis_worldbuffData", buffData, "EX", 60 * 60 * 10);
+    res.status(200).json({ message: "월법" });
+  } else {
+    console.log(`키가 일치하지 않습니다.`);
+    res.status(500).send("Inconsistency key");
+  }
+});
+
+app.get("/api/worldbuff", async (req, res) => {
+  console.log("월드버프 요청됨");
+  const wouldbuff = await redis.get("Redis_worldbuffData");
+  res.status(200).json(wouldbuff);
+  return;
 });
 
 app.listen(5000, () => {
