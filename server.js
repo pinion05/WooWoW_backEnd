@@ -8,6 +8,7 @@ const axios = require("axios");
 const qs = require("querystring");
 const cache = require("memory-cache");
 const Redis = require("ioredis");
+const port = process.env.PORT;
 const redis = new Redis({
   port: process.env.REDIS_PORT, // Redis port
   host: process.env.REDIS_HOST, // Redis host
@@ -57,6 +58,11 @@ async function getAccessToken() {
 getAccessToken().then(() => {
   const accessToken = cache.get("token");
   console.log(`✨token = ${accessToken}`);
+});
+
+app.get("/", (req, res) => {
+  res.status(200).json("루트입니다");
+  return;
 });
 
 app.get(`/api/character`, async (req, res) => {
@@ -215,6 +221,6 @@ app.get("/api/worldbuff", async (req, res) => {
   return;
 });
 
-app.listen(5000, () => {
-  console.log(`server running on 5000`);
+app.listen(port, () => {
+  console.log(`server running on ${port}`);
 });
