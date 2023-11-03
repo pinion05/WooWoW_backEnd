@@ -124,22 +124,41 @@ app.get(`/api/characterinfo`, async (req, res) => {
   }
   console.log(`❌ Redis ${charactername} 캐릭터정보 캐시없음`);
   try {
-    const characterResponse = await axios.get(
-      `https://kr.api.blizzard.com/profile/wow/character/makgora/${encodedName}?namespace=profile-classic1x-kr&locale=ko_KR&access_token=${accessToken}`
-    );
-    const equimentResponse = await axios.get(
-      `https://kr.api.blizzard.com/profile/wow/character/makgora/${encodedName}/equipment?namespace=profile-classic1x-kr&access_token=${accessToken}&locale=ko_KR`
-    );
-    const stasticsResponse = await axios.get(
-      `https://kr.api.blizzard.com/profile/wow/character/makgora/${encodedName}/statistics?namespace=profile-classic1x-kr&access_token=${accessToken}&locale=ko_KR`
-    );
-    const equimentResponseData = equimentResponse.data;
-    const characterResponseData = characterResponse.data;
+    let characterResponseSession;
+    try {
+      const characterResponse = await axios.get(
+        `https://kr.api.blizzard.com/profile/wow/character/makgora/${encodedName}?namespace=profile-classic1x-kr&locale=ko_KR&access_token=${accessToken}`
+      );
+      characterResponseSession = characterResponse;
+    } catch (error) {
+      console.log("기본정보 요청에러");
+    }
+    let equimentResponseSession;
+    try {
+      const equimentResponse = await axios.get(
+        `https://kr.api.blizzard.com/profile/wow/character/makgora/${encodedName}/equipment?namespace=profile-classic1x-kr&access_token=${accessToken}&locale=ko_KR`
+      );
+      equimentResponseSession = equimentResponse;
+    } catch (error) {
+      console.log("착용장비 요청에러");
+    }
+    let stasticsResponseSession;
+    try {
+      const stasticsResponse = await axios.get(
+        `https://kr.api.blizzard.com/profile/wow/character/makgora/${encodedName}/statistics?namespace=profile-classic1x-kr&access_token=${accessToken}&locale=ko_KR`
+      );
+      stasticsResponseSession = stasticsResponse;
+    } catch (error) {
+      console.log("스태스틱스 요청에러");
+    }
+
+    const equimentResponseData = equimentResponseSession.data;
+    const characterResponseData = characterResponseSession.data;
     const equimentItems = equimentResponseData.equipped_items;
-    const stasticsResponseData = stasticsResponse.data;
+    const stasticsResponseData = stasticsResponseSession.data;
     const equimentItemsAddURL = equimentItems.map(async (item, idx) => {
       const response = await axios.get(
-        `https://kr.api.blizzard.com/data/wow/media/item/${item.media.id}?namespace=static-1.14.4_50753-classic1x-kr&access_token=KR8yFplomaTeggvFh9IELHFBMMPGWHR6UV`
+        `https://kr.api.blizzard.com/data/wow/media/item/${item.media.id}?namespace=static-1.14.4_50753-classic1x-kr&access_token=${accessToken}`
       );
       const imgURL = response.data.assets[0].value;
       item.media.url = imgURL;
